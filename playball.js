@@ -24,8 +24,8 @@ class ArmDemo {
 
         // Physics constants
         this.gravity = 0.8;          // Gravity acceleration
-        this.damping = 0.98;         // Damping factor to reduce velocity over time
-        this.baseStiffness = 0.1;    // Base spring stiffness
+        this.damping = 0.999;         // Damping factor to reduce velocity over time
+        this.baseStiffness = 0.2;    // Base spring stiffness
         this.springLength = 5;       // Rest length of the springs (length of each segment)
 
         // Power and movement variables
@@ -156,7 +156,7 @@ class ArmDemo {
         // Increase stiffness as the spring stretches
         const stiffness = this.baseStiffness + Math.pow(Math.abs(difference), 1.5) * 0.001;
 
-        const percent = (difference / distance) * stiffness * 0.5;
+        const percent = (difference / distance) * stiffness * 0.4;
         const offsetX = dx * percent;
         const offsetY = dy * percent;
 
@@ -318,7 +318,7 @@ class ArmDemo {
         const mouseY = event.clientY - this.canvas.offsetTop;
         const angle = Math.atan2(mouseY - this.hand.y, mouseX - this.hand.x);
 
-        const speed = this.power * 0.5; // Adjusted speed multiplier
+        const speed = this.power * 1.2; // Adjusted speed multiplier
         const vx = Math.cos(angle) * speed;
         const vy = Math.sin(angle) * speed;
 
