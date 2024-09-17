@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>2D Platformer with Arm and Debugging</title>
+    <style>
+        canvas {
+            background-color: #f0f0f0;
+            display: block;
+            margin: 0 auto;
+            border: 1px solid #000;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        // ===============================
+        // Platformer Game with Arm and Debugging
+        // ===============================
+
+        // Get the canvas and context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Keyboard input tracking
+        const keys = {};
+
+        document.addEventListener('keydown', function (e) {
+            keys[e.key.toLowerCase()] = true;
+        });
+
+        document.addEventListener('keyup', function (e) {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Player object
+        const player = {
+            x: canvas.width / 2 - 20,
+            y: canvas.height - 140, // Adjusted for taller player
+            width: 40,
+            height: 120, // Player is now twice as tall
+            speed: 5,
+            velX: 0,
+            velY: 0,
+            jumping: false,
+            grounded: false
+        };
+
+        const gravity = 0.5;
+        const friction = 0.8;
+
+        // Platform and walls
+        const platform = {
+            x: 0,
+            y: canvas.height - 10,
+            width: canvas.width,
+            height: 10
+        };
+
+        const leftWall = {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: canvas.height
+        };
+
+        const rightWall = {
+            x: canvas.width - 10,
+            y: 0,
+            width: 10,
+            height: canvas.height
+        };
+
+        const obstacles = [platform, leftWall, rightWall];
+
+        // ===============================
+        // Arm and Hand Setup with Mouse Events and Debugging
+        // ===============================
+
+        // Physics constants for the arm
+        const armGravity = 0.8;
+        const armDamping = 0.999;
+        const baseStiffness = 0.2;
+        const springLength = 2;
+
+        // Power and movement variables
+        let power = 1;
+        const maxPower = 100;
+        let charge = false; // Is the hand charging power?
+
+        // Mouse position for targeting
+        let mouseTarget = { x: canvas.width / 2, y: canvas.height / 2 };
+
+        // Arm segments and hand
+        const armSegments = [];
+        let hand = null;
+
+        // Initialize the arm
+        function initArm() {
+            const numSegments = 10;
+            const segmentLength = springLength;
+
+            // Starting position of the arm (attach to player's shoulder)
+            const shoulderX = player.x + player.width / 2;
+            const shoulderY = player.y + player.height / 4; // Adjusted to player's upper body
+
+            // Create particles for the segments starting from the shoulder
+            for (let i = 0; i < numSegments; i++) {
+                let x = shoulderX;
+                let y = shoulderY + i * segmentLength;
+                let segment = new Particle(x, y);
+                armSegments.push(segment);
+            }
+
+            // Create the hand particle
+            const lastSegment = armSegments[armSegments.length - 1];
+            hand = new Particle(lastSegment.x, lastSegment.y + segmentLength);
+        }
+
+        /**
+         * Particle class using Verlet integration.
+         */
+        class Particle {
+            constructor(x = 0, y = 0) {
+                this.x = x;
+                this.y = y;
+
+                // Previous position
+                this.lastX = x;
+                this.lastY = y;
+
+                // Acceleration
+                this.ax = 0;
+                this.ay = 0;
+
+                this.radius = 5;
+            }
+
+            applyForce(fx, fy) {
+                this.ax += fx;
+                this.ay += fy;
+            }
+
+            update(damping) {
+                const tempX = this.x;
+                const tempY = this.y;
+
+                const vx = (this.x - this.lastX) * damping;
+                const vy = (this.y - this.lastY) * damping;
+
+                this.x += vx + this.ax;
+                this.y += vy + this.ay;
+
+                this.lastX = tempX;
+                this.lastY = tempY;
+
+                this.ax = 0;
+                this.ay = 0;
+            }
+
+            draw(ctx, color = 'yellow') {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        /**
+         * Platform class for collision detection.
+         */
+        class Platform {
+            constructor(x, y, width, height) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+            }
+
+            checkCollision(particle) {
+                const closestX = Math.max(this.x, Math.min(particle.x, this.x + this.width));
+                const closestY = Math.max(this.y, Math.min(particle.y, this.y + this.height));
+
+                const dx = particle.x - closestX;
+                const dy = particle.y - closestY;
+
+                if (dx * dx + dy * dy < particle.radius * particle.radius) {
+                    if (particle.y < this.y) {
+                        particle.y = this.y - particle.radius;
+                    } else {
+                        particle.y = this.y + this.height + particle.radius;
+                    }
+
+                    // Reflect velocity
+                    let vy = particle.y - particle.lastY;
+                    particle.lastY = particle.y + vy * 0.5; // Adjust bounce
+                }
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = 'gray';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+        }
+
+        const platformObject = new Platform(platform.x, platform.y, platform.width, platform.height);
+
+        // Initialize the arm
+        initArm();
+
+        // Set up mouse event listeners
+        canvas.addEventListener('mousedown', onMouseDown);
+        canvas.addEventListener('mouseup', onMouseUp);
+
+        function onMouseDown(event) {
+            mouseTarget.x = event.clientX - canvas.offsetLeft;
+            mouseTarget.y = event.clientY - canvas.offsetTop;
+
+            power = 10;
+            charge = true;
+        }
+
+        function onMouseUp(event) {
+            charge = false;
+
+            const mouseX = event.clientX - canvas.offsetLeft;
+            const mouseY = event.clientY - canvas.offsetTop;
+            const angle = Math.atan2(mouseY - hand.y, mouseX - hand.x);
+
+            const speed = power * 1.2; // Adjusted speed multiplier
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+
+            // Adjust last positions for Verlet integration
+            hand.lastX = hand.x - vx;
+            hand.lastY = hand.y - vy;
+        }
+
+        // Main update function
+        function update() {
+            // Handle input
+            if (keys['a'] || keys['arrowleft']) {
+                if (player.velX > -player.speed) {
+                    player.velX--;
+                }
+            }
+            if (keys['d'] || keys['arrowright']) {
+                if (player.velX < player.speed) {
+                    player.velX++;
+                }
+            }
+            if ((keys['w'] || keys['arrowup'] || keys[' ']) && !player.jumping && player.grounded) {
+                player.jumping = true;
+                player.grounded = false;
+                player.velY = -10;
+            }
+
+            // Apply physics
+            player.velX *= friction;
+            player.velY += gravity;
+
+            player.x += player.velX;
+            player.y += player.velY;
+
+            // Collision detection
+            player.grounded = false;
+
+            for (let i = 0; i < obstacles.length; i++) {
+                let ob = obstacles[i];
+                let dir = colCheck(player, ob);
+                if (dir === "l" || dir === "r") {
+                    player.velX = 0;
+                } else if (dir === "b") {
+                    player.grounded = true;
+                    player.jumping = false;
+                } else if (dir === "t") {
+                    player.velY *= -1;
+                }
+            }
+
+            if (player.grounded) {
+                player.velY = 0;
+            }
+
+            // Prevent player from moving off-screen horizontally
+            if (player.x <= 10) {
+                player.x = 10;
+            } else if (player.x + player.width >= canvas.width - 10) {
+                player.x = canvas.width - player.width - 10;
+            }
+
+            // ===============================
+            // Update Arm Physics
+            // ===============================
+
+            // Update power if charging
+            if (charge) {
+                power = Math.min(power * 1.1, maxPower);
+            }
+
+            // Update the shoulder position to follow the player
+            const shoulderX = player.x + player.width / 2;
+            const shoulderY = player.y + player.height / 4;
+
+            // Pin the base segment to the shoulder
+            const base = armSegments[0];
+            base.x = shoulderX;
+            base.y = shoulderY;
+            base.lastX = base.x;
+            base.lastY = base.y;
+
+            // Update arm segments
+            for (let i = 1; i < armSegments.length; i++) {
+                let segment = armSegments[i];
+                segment.applyForce(0, armGravity);
+                segment.update(armDamping);
+            }
+
+            // Update hand
+            hand.applyForce(0, armGravity);
+            hand.update(armDamping);
+
+            // Apply spring forces between connected segments
+            applySpringForces();
+
+            // Enforce constraints (e.g., collisions with platforms)
+            enforceConstraints();
+
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw player
+            ctx.fillStyle = 'red';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Draw obstacles
+            ctx.fillStyle = 'black';
+            for (let i = 0; i < obstacles.length; i++) {
+                let ob = obstacles[i];
+                ctx.fillRect(ob.x, ob.y, ob.width, ob.height);
+            }
+
+            // Draw the arm
+            renderArm();
+
+            // Render power bar
+            renderPowerBar();
+
+            // Render debugging text
+            renderDebugInfo();
+
+            requestAnimationFrame(update);
+        }
+
+        // Collision detection function
+        function colCheck(shapeA, shapeB) {
+            let vX = (shapeA.x + (shapeA.width / 2)) - (shapeB.x + (shapeB.width / 2));
+            let vY = (shapeA.y + (shapeA.height / 2)) - (shapeB.y + (shapeB.height / 2));
+            let hWidths = (shapeA.width / 2) + (shapeB.width / 2);
+            let hHeights = (shapeA.height / 2) + (shapeB.height / 2);
+            let colDir = null;
+
+            if (Math.abs(vX) < hWidths && Math.abs(vY) < hHeights) {
+                let oX = hWidths - Math.abs(vX);
+                let oY = hHeights - Math.abs(vY);
+                if (oX >= oY) {
+                    if (vY > 0) {
+                        colDir = "t";
+                        shapeA.y += oY;
+                    } else {
+                        colDir = "b";
+                        shapeA.y -= oY;
+                    }
+                } else {
+                    if (vX > 0) {
+                        colDir = "l";
+                        shapeA.x += oX;
+                    } else {
+                        colDir = "r";
+                        shapeA.x -= oX;
+                    }
+                }
+            }
+            return colDir;
+        }
+
+        // ===============================
+        // Arm Physics Functions
+        // ===============================
+
+        function applySpringForces() {
+            const iterations = 5; // Increase for smoother motion
+            for (let k = 0; k < iterations; k++) {
+                // Apply spring between hand and last segment
+                applySpring(hand, armSegments[armSegments.length - 1]);
+
+                // Apply springs between segments
+                for (let i = armSegments.length - 1; i > 0; i--) {
+                    applySpring(armSegments[i], armSegments[i - 1]);
+                }
+            }
+        }
+
+        function applySpring(p1, p2) {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance === 0) return;
+
+            const difference = distance - springLength;
+
+            // Increase stiffness as the spring stretches
+            const stiffness = baseStiffness + Math.pow(Math.abs(difference), 1.5) * 0.001;
+
+            const percent = (difference / distance) * stiffness * 0.4;
+            const offsetX = dx * percent;
+            const offsetY = dy * percent;
+
+            // Adjust positions
+            p1.x += offsetX;
+            p1.y += offsetY;
+            p2.x -= offsetX;
+            p2.y -= offsetY;
+        }
+
+        function enforceConstraints() {
+            // Collision with platform
+            platformObject.checkCollision(hand);
+            for (let i = 1; i < armSegments.length; i++) {
+                platformObject.checkCollision(armSegments[i]);
+            }
+
+            // Keep particles within canvas boundaries
+            for (let particle of [hand, ...armSegments]) {
+                // Left boundary
+                if (particle.x < particle.radius) {
+                    particle.x = particle.radius;
+                    let vx = particle.x - particle.lastX;
+                    particle.lastX = particle.x + vx * 0.5;
+                }
+                // Right boundary
+                if (particle.x > canvas.width - particle.radius) {
+                    particle.x = canvas.width - particle.radius;
+                    let vx = particle.x - particle.lastX;
+                    particle.lastX = particle.x + vx * 0.5;
+                }
+                // Top boundary
+                if (particle.y < particle.radius) {
+                    particle.y = particle.radius;
+                    let vy = particle.y - particle.lastY;
+                    particle.lastY = particle.y + vy * 0.5;
+                }
+                // Bottom boundary
+                if (particle.y > canvas.height - particle.radius) {
+                    particle.y = canvas.height - particle.radius;
+                    let vy = particle.y - particle.lastY;
+                    particle.lastY = particle.y + vy * 0.5;
+                }
+            }
+        }
+
+        function renderArm() {
+            // Draw springs
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < armSegments.length - 1; i++) {
+                ctx.moveTo(armSegments[i].x, armSegments[i].y);
+                ctx.lineTo(armSegments[i + 1].x, armSegments[i + 1].y);
+            }
+            ctx.moveTo(armSegments[armSegments.length - 1].x, armSegments[armSegments.length - 1].y);
+            ctx.lineTo(hand.x, hand.y);
+            ctx.stroke();
+
+            // Draw particles
+            for (let segment of armSegments) {
+                segment.draw(ctx);
+            }
+            hand.draw(ctx, 'green');
+        }
+
+        function renderPowerBar() {
+            const barWidth = 200;
+            const barHeight = 20;
+            const barX = (canvas.width - barWidth) / 2;
+            const barY = canvas.height - 50;
+            const powerPercent = Math.min(power / maxPower, 1);
+
+            // Background
+            ctx.fillStyle = 'gray';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+
+            // Power level
+            ctx.fillStyle = 'green';
+            ctx.fillRect(barX, barY, barWidth * powerPercent, barHeight);
+
+            // Border
+            ctx.strokeStyle = 'white';
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+        }
+
+        function renderDebugInfo() {
+            ctx.fillStyle = 'white';
+            ctx.font = '14px Arial';
+
+            // Display hand position
+            ctx.fillText(`Hand Position: x=${hand.x.toFixed(2)}, y=${hand.y.toFixed(2)}`, 10, 20);
+
+            // Display hand velocity
+            const vx = ((hand.x - hand.lastX) / (1 - armDamping)).toFixed(2);
+            const vy = ((hand.y - hand.lastY) / (1 - armDamping)).toFixed(2);
+            ctx.fillText(`Hand Velocity: vx=${vx}, vy=${vy}`, 10, 40);
+
+            // Display power
+            ctx.fillText(`Power: ${power.toFixed(2)}`, 10, 60);
+
+            // Display segment positions
+            for (let i = 0; i < armSegments.length; i++) {
+                let segment = armSegments[i];
+                ctx.fillText(`Seg ${i}: x=${segment.x.toFixed(2)}, y=${segment.y.toFixed(2)}`, 10, 80 + i * 20);
+                if (i >= 5) {
+                    // Avoid text going off-screen
+                    break;
+                }
+            }
+        }
+
+        // Start the game loop
+        update();
+    </script>
+</body>
+
+</html>

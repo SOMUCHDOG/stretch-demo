@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>2D Platformer with Sloped Platform</title>
+    <style>
+        canvas {
+            background-color: #f0f0f0;
+            display: block;
+            margin: 0 auto;
+            border: 1px solid #000;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        // Get the canvas and context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Keyboard input tracking
+        const keys = {};
+
+        document.addEventListener('keydown', function (e) {
+            keys[e.key] = true;
+        });
+
+        document.addEventListener('keyup', function (e) {
+            keys[e.key] = false;
+        });
+
+        // Player object
+        const player = {
+            x: canvas.width / 2 - 20,
+            y: canvas.height - 70,
+            width: 40,
+            height: 60,
+            speed: 5,
+            velX: 0,
+            velY: 0,
+            jumping: false,
+            grounded: false
+        };
+
+        const gravity = 0.5;
+        const friction = 0.8;
+
+        // Platform and walls
+        const platform = {
+            x: 0,
+            y: canvas.height - 10,
+            width: canvas.width,
+            height: 10
+        };
+
+        const leftWall = {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: canvas.height
+        };
+
+        const rightWall = {
+            x: canvas.width - 10,
+            y: 0,
+            width: 10,
+            height: canvas.height
+        };
+
+        // Sloped platform data
+        const slopedPlatform = {
+            x1: 200,
+            y1: canvas.height - 110,
+            x2: 400,
+            y2: canvas.height - 210
+        };
+
+        const obstacles = [platform, leftWall, rightWall];
+
+        // Main update function
+        function update() {
+            // Handle input
+            if (keys['a'] || keys['ArrowLeft']) {
+                if (player.velX > -player.speed) {
+                    player.velX--;
+                }
+            }
+            if (keys['d'] || keys['ArrowRight']) {
+                if (player.velX < player.speed) {
+                    player.velX++;
+                }
+            }
+            if ((keys['w'] || keys['ArrowUp'] || keys[' ']) && !player.jumping && player.grounded) {
+                player.jumping = true;
+                player.grounded = false;
+                player.velY = -10;
+            }
+
+            // Apply physics
+            player.velX *= friction;
+            player.velY += gravity;
+
+            player.x += player.velX;
+            player.y += player.velY;
+
+            // Collision detection
+            player.grounded = false;
+
+            for (let i = 0; i < obstacles.length; i++) {
+                let ob = obstacles[i];
+                let dir = colCheck(player, ob);
+                if (dir === "l" || dir === "r") {
+                    player.velX = 0;
+                } else if (dir === "b") {
+                    player.grounded = true;
+                    player.jumping = false;
+                } else if (dir === "t") {
+                    player.velY *= -1;
+                }
+            }
+
+            // Sloped platform collision
+            if (checkSlopedCollision(player, slopedPlatform)) {
+                player.grounded = true;
+                player.jumping = false;
+                player.velY = 0;
+                // Adjust player.y to stand on the slope
+                const slopeY = getSlopeYAtX(slopedPlatform, player.x + player.width / 2);
+                player.y = slopeY - player.height;
+            }
+
+            if (player.grounded) {
+                player.velY = 0;
+            }
+
+            // Prevent player from moving off-screen horizontally
+            if (player.x <= 10) {
+                player.x = 10;
+            } else if (player.x + player.width >= canvas.width - 10) {
+                player.x = canvas.width - player.width - 10;
+            }
+
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw player
+            ctx.fillStyle = 'red';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Draw obstacles
+            ctx.fillStyle = 'black';
+            for (let i = 0; i < obstacles.length; i++) {
+                let ob = obstacles[i];
+                ctx.fillRect(ob.x, ob.y, ob.width, ob.height);
+            }
+
+            // Draw sloped platform
+            ctx.beginPath();
+            ctx.moveTo(slopedPlatform.x1, slopedPlatform.y1);
+            ctx.lineTo(slopedPlatform.x2, slopedPlatform.y2);
+            ctx.lineTo(slopedPlatform.x2, canvas.height);
+            ctx.lineTo(slopedPlatform.x1, canvas.height);
+            ctx.closePath();
+            ctx.fill();
+
+            requestAnimationFrame(update);
+        }
+
+        // Collision detection function for rectangles
+        function colCheck(shapeA, shapeB) {
+            let vX = (shapeA.x + (shapeA.width / 2)) - (shapeB.x + (shapeB.width / 2));
+            let vY = (shapeA.y + (shapeA.height / 2)) - (shapeB.y + (shapeB.height / 2));
+            let hWidths = (shapeA.width / 2) + (shapeB.width / 2);
+            let hHeights = (shapeA.height / 2) + (shapeB.height / 2);
+            let colDir = null;
+
+            if (Math.abs(vX) < hWidths && Math.abs(vY) < hHeights) {
+                let oX = hWidths - Math.abs(vX);
+                let oY = hHeights - Math.abs(vY);
+                if (oX >= oY) {
+                    if (vY > 0) {
+                        colDir = "t";
+                        shapeA.y += oY;
+                    } else {
+                        colDir = "b";
+                        shapeA.y -= oY;
+                    }
+                } else {
+                    if (vX > 0) {
+                        colDir = "l";
+                        shapeA.x += oX;
+                    } else {
+                        colDir = "r";
+                        shapeA.x -= oX;
+                    }
+                }
+            }
+            return colDir;
+        }
+
+        // Function to check collision with sloped platform
+        function checkSlopedCollision(player, slope) {
+            // Check if player is within the horizontal bounds of the slope
+            if (player.x + player.width > slope.x1 && player.x < slope.x2) {
+                // Get the Y position of the slope at the player's X position
+                const slopeY = getSlopeYAtX(slope, player.x + player.width / 2);
+                // Check if player's feet are touching or below the slope
+                if (player.y + player.height >= slopeY && player.y + player.height <= slopeY + 10) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Function to get the Y value of the slope at a given X
+        function getSlopeYAtX(slope, x) {
+            const slopeHeight = slope.y2 - slope.y1;
+            const slopeWidth = slope.x2 - slope.x1;
+            const slopeAngle = slopeHeight / slopeWidth;
+            const dx = x - slope.x1;
+            return slope.y1 + slopeAngle * dx;
+        }
+
+        // Start the game loop
+        update();
+    </script>
+</body>
+
+</html>
